@@ -123,6 +123,53 @@ POST /polls/:id/vote – vote on a poll option
 
 { "userId": "<userId>", "pollOptionId": "<optionId>" }
 
+**Testing the API Endpoints or (you can use frontend.html to test all the functinality)
+
+You can test the API using:
+
+1. cURL in terminal
+
+Create a user:
+
+curl -X POST http://localhost:4000/users \
+-H "Content-Type: application/json" \
+-d '{"name":"Alice","email":"alice@example.com","password":"password123"}'
+
+
+List users:
+
+curl http://localhost:4000/users
+
+
+Create a poll:
+
+curl -X POST http://localhost:4000/polls \
+-H "Content-Type: application/json" \
+-d '{"question":"Tea or Coffee?","options":["Tea","Coffee"],"creatorId":"<userId>"}'
+
+
+Vote on an option:
+
+curl -X POST http://localhost:4000/polls/<pollId>/vote \
+-H "Content-Type: application/json" \
+-d '{"userId":"<userId>","pollOptionId":"<optionId>"}'
+
+
+Get poll details:
+
+curl http://localhost:4000/polls/<pollId>
+
+
+Replace <userId>, <pollId>, <optionId> with the actual IDs from your database.
+
+2. Postman / Insomnia
+
+Open the API endpoints in Postman.
+
+Set Content-Type: application/json for POST requests.
+
+Paste the JSON body for creating users, polls, or submitting votes.
+
 Notes
 
 Single vote per user per poll is enforced. Once a user votes on a poll, they cannot vote on another option in the same poll.
