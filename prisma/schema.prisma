@@ -1,0 +1,48 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  passwordHash String
+  polls        Poll[]   @relation("UserPolls")
+  votes        Vote[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Poll {
+  id         Int          @id @default(autoincrement())
+  question   String
+  isPublished Boolean      @default(true)
+  creatorId  Int
+  creator    User         @relation("UserPolls", fields: [creatorId], references: [id])
+  options    PollOption[]
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+}
+
+model PollOption {
+  id       Int     @id @default(autoincrement())
+  text     String
+  pollId   Int
+  poll     Poll    @relation(fields: [pollId], references: [id])
+  votes    Vote[]
+}
+
+model Vote {
+  id           Int         @id @default(autoincrement())
+  userId       Int
+  pollOptionId Int
+  user         User        @relation(fields: [userId], references: [id])
+  pollOption   PollOption  @relation(fields: [pollOptionId], references: [id])
+
+  @@unique([userId, pollOptionId]) // user cannot vote same option twice
+}

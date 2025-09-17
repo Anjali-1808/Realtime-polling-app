@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Realtime Polls — UI</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root{
+      --bg:#f5f7fb; --card:#ffffff; --muted:#6b7280; --accent:#2563eb;
+    }
+    body{font-family:Inter,Segoe UI,Arial; background:var(--bg); margin:0; padding:24px;}
+    .container{max-width:980px; margin:0 auto;}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;}
+    h1{font-size:20px;margin:0}
+    .sub{color:var(--muted); font-size:13px}
+    .grid{display:grid;grid-template-columns:320px 1fr;gap:18px}
+    .card{background:var(--card);padding:14px;border-radius:10px;box-shadow:0 6px 18px rgba(16,24,40,0.06)}
+    label{display:block;font-size:13px;margin-top:8px;color:#111827}
+    input[type="text"], input[type="email"], input[type="password"], textarea, select{
+      width:100%;padding:8px 10px;margin-top:6px;border:1px solid #e6e9ef;border-radius:8px;font-size:14px;box-sizing:border-box;
+    }
+    textarea{min-height:84px;resize:vertical}
+    button{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600}
+    button.secondary{background:#e6eefc;color:var(--accent)}
+    .poll-list{display:flex;flex-direction:column;gap:12px}
+    .poll-item{display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:8px;border:1px solid #eef2ff}
+    .poll-header{display:flex;justify-content:space-between;align-items:center}
+    .options{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+    .opt-row{display:flex;align-items:center;gap:10px}
+    .opt-btn{flex:0 0 auto;padding:8px 10px;border-radius:8px;border:none;cursor:pointer;background:#111827;color:#fff}
+    .count{font-size:13px;color:var(--muted);margin-left:auto}
+    .small{font-size:13px;color:var(--muted)}
+    #status{font-size:13px;color:var(--muted);margin-top:8px}
+    .row{display:flex;gap:8px;align-items:center}
+    .right{margin-left:auto}
+    .link{color:var(--accent);cursor:pointer;text-decoration:underline}
+    .users-table{width:100%;border-collapse:collapse}
+    .users-table td,.users-table th{padding:6px 8px;border-bottom:1px solid #f1f5f9}
+    @media(max-width:880px){ .grid{grid-template-columns:1fr} }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Realtime Polls</h1>
+        <div class="sub">Create polls, vote and see live results — powered by Express + Prisma + Socket.IO</div>
+      </div>
+
+      <div class="row">
+        <div id="userBox" class="small"></div>
+        <button id="logoutBtn" class="secondary" style="display:none">Logout</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- LEFT: Forms -->
+      <div>
+        <!-- Sign up / Sign in -->
+        <div class="card" id="authCard">
+          <h3 style="margin:0 0 8px 0">Account</h3>
+          <div id="authArea">
+            <label>Name</label>
+            <input id="name" type="text" placeholder="Your name" />
+            <label>Email</label>
+            <input id="email" type="email" placeholder="you@example.com" />
+            <label>Password</label>
+            <input id="password" type="password" placeholder="choose a password" />
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button onclick="signup()">Sign up</button>
+              <button onclick="signin()" class="secondary">Sign in</button>
+            </div>
+            <div id="authMsg" style="margin-top:8px" class="small"></div>
+          </div>
+        </div>
+
+        <!-- Create Poll -->
+        <div class="card" style="margin-top:12px">
+          <h3 style="margin:0 0 8px 0">Create Poll</h3>
+          <label>Question</label>
+          <input id="qQuestion" type="text" placeholder="e.g. Which frontend framework?" />
+          <label>Options (one per line)</label>
+          <textarea id="qOptions" placeholder="React
+Vue
+Svelte"></textarea>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <button onclick="createPoll()">Create Poll</button>
+            <button onclick="clearCreate()" class="secondary">Clear</button>
+          </div>
+          <div id="createMsg" class="small" style="margin-top:8px"></div>
+        </div>
+
+        <!-- Users list -->
+        <div class="card" style="margin-top:12px">
+          <h3 style="margin:0 0 8px 0">Registered Users</h3>
+          <div id="usersArea" class="small">Loading...</div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Polls -->
+      <div>
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:12px">
+            <h3 style="margin:0">All Polls</h3>
+            <div class="small" style="margin-left:auto">Live updates enabled</div>
+          </div>
+
+          <div id="polls" style="margin-top:12px" class="poll-list">
+            Loading polls...
+          </div>
+
+          <div id="status" class="small"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Socket.IO client -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    const API = "http://localhost:4000";
+    const socket = io(API, { transports: ["websocket","polling"] });
+
+    const userBox = document.getElementById("userBox");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const authMsg = document.getElementById("authMsg");
+    const usersArea = document.getElementById("usersArea");
+    const pollsRoot = document.getElementById("polls");
+    const status = document.getElementById("status");
+    const createMsg = document.getElementById("createMsg");
+
+    /* ---------- AUTH ---------- */
+    function getStoredUser(){
+      try { return JSON.parse(localStorage.getItem("rp_user")); } catch(e){ return null; }
+    }
+    function setStoredUser(user){
+      localStorage.setItem("rp_user", JSON.stringify(user));
+      updateAuthUI();
+    }
+    function clearStoredUser(){ localStorage.removeItem("rp_user"); updateAuthUI(); }
+
+    function updateAuthUI(){
+      const u = getStoredUser();
+      if(u){
+        userBox.textContent = `${u.name} (${u.email})`;
+        logoutBtn.style.display = "inline-block";
+        document.getElementById("authArea").style.display = "none";
+      } else {
+        userBox.textContent = "";
+        logoutBtn.style.display = "none";
+        document.getElementById("authArea").style.display = "block";
+      }
+    }
+
+    logoutBtn.onclick = () => { clearStoredUser(); loadPolls(); };
+
+    async function signup(){
+      authMsg.textContent = "Signing up...";
+      const name = document.getElementById("name").value.trim();
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value.trim();
+      if(!name||!email||!password){ authMsg.textContent="Fill all fields"; return; }
+
+      try {
+        const res = await fetch(API + "/users", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({name,email,password}) });
+        if(!res.ok){ const e = await res.json().catch(()=>({error:"failed"})); authMsg.textContent = "Error: "+(e.error||"signup failed"); return; }
+        setStoredUser(await res.json());
+        authMsg.textContent = "Signed up!";
+        await loadUsers();
+        await loadPolls();
+      } catch(err){ console.error(err); authMsg.textContent="Signup failed"; }
+    }
+
+    async function signin(){
+      authMsg.textContent = "Signing in...";
+      const email = document.getElementById("email").value.trim();
+      if(!email){ authMsg.textContent="Enter email"; return; }
+      try {
+        const res = await fetch(API + "/users");
+        const users = await res.json();
+        const found = users.find(u=>u.email===email);
+        if(!found){ authMsg.textContent="No user with that email"; return; }
+        setStoredUser(found);
+        authMsg.textContent = `Signed in as ${found.name}`;
+        await loadPolls();
+      } catch(err){ console.error(err); authMsg.textContent="Sign in failed"; }
+    }
+
+    /* ---------- USERS ---------- */
+    async function loadUsers(){
+      try {
+        const res = await fetch(API + "/users");
+        const users = await res.json();
+        if(!users.length){ usersArea.innerHTML="No users yet"; return; }
+        let html = "<table class='users-table'><tr><th>Name</th><th>Email</th></tr>";
+        users.forEach(u=>html+=`<tr><td>${escapeHtml(u.name)}</td><td>${escapeHtml(u.email)}</td></tr>`);
+        html+="</table>"; usersArea.innerHTML=html;
+      } catch(err){ usersArea.textContent="Failed to load users"; }
+    }
+
+    function escapeHtml(s){ return (s+"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    /* ---------- POLLS ---------- */
+    async function loadPolls(){
+      pollsRoot.innerHTML = "Loading...";
+      try {
+        const res = await fetch(API + "/polls");
+        const polls = await res.json();
+        if(!polls.length){ pollsRoot.innerHTML="<div class='small'>No polls yet — create one!</div>"; return; }
+        pollsRoot.innerHTML = "";
+        polls.forEach(renderPollItem);
+        status.textContent = `Loaded ${polls.length} polls`;
+      } catch(err){ pollsRoot.innerHTML="Error loading polls"; console.error(err); }
+    }
+
+    function renderPollItem(poll){
+      const user = getStoredUser();
+      const node = document.createElement("div"); node.className="poll-item";
+
+      const header = document.createElement("div"); header.className="poll-header";
+      header.innerHTML=`<div style="font-weight:600">${escapeHtml(poll.question)}</div><div class="small">by ${escapeHtml(poll.creator?.name||'Unknown')}</div>`;
+      node.appendChild(header);
+
+      const opts = document.createElement("div"); opts.className="options";
+      let userVoted = false;
+      if(user){
+        poll.options.forEach(o=>{
+          const hasVoted = o.voters?.includes(user.id);
+          if(hasVoted) userVoted=true;
+        });
+      }
+
+      poll.options.forEach(opt=>{
+        const row = document.createElement("div"); row.className="opt-row";
+        const btn = document.createElement("button"); btn.className="opt-btn"; btn.innerText=opt.text;
+        btn.setAttribute("data-poll", poll.id);
+        if(userVoted) { btn.disabled=true; btn.style.opacity=0.6; btn.style.cursor="not-allowed"; }
+        btn.onclick=()=>vote(poll.id,opt.id);
+        const count = document.createElement("div"); count.className="count"; count.id=`count_${opt.id}`; count.innerText=`${opt.votes} votes`;
+        row.appendChild(btn); row.appendChild(count);
+        opts.appendChild(row);
+      });
+
+      if(userVoted){ const votedNotice=document.createElement("div"); votedNotice.className="small"; votedNotice.innerText="You already voted"; opts.appendChild(votedNotice); }
+
+      node.appendChild(opts);
+      pollsRoot.appendChild(node);
+
+      socket.emit("joinPoll",{pollId:poll.id});
+    }
+
+    async function createPoll(){
+      createMsg.textContent="Creating...";
+      const question=document.getElementById("qQuestion").value.trim();
+      const optionsText=document.getElementById("qOptions").value.trim();
+      if(!question||!optionsText){ createMsg.textContent="Question & options required"; return; }
+      const options=optionsText.split("\n").map(s=>s.trim()).filter(Boolean);
+      const user=getStoredUser();
+      try{
+        const res = await fetch(API+"/polls",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(user?{question,options,creatorId:user.id}:{question,options})});
+        if(!res.ok){ const e=await res.json().catch(()=>({error:"failed"})); createMsg.textContent="Error: "+(e.error||"create failed"); return; }
+        createMsg.textContent=`Poll created: ${res.id}`;
+        document.getElementById("qQuestion").value=""; document.getElementById("qOptions").value="";
+        await loadPolls();
+      } catch(err){ console.error(err); createMsg.textContent="Failed to create poll"; }
+    }
+    function clearCreate(){ document.getElementById("qQuestion").value=""; document.getElementById("qOptions").value=""; createMsg.textContent=""; }
+
+    async function vote(pollId, optionId){
+      const user=getStoredUser(); if(!user){ alert("Sign up to vote"); return; }
+      try{
+        const res=await fetch(API+`/polls/${pollId}/vote`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userId:user.id,pollOptionId:optionId})});
+        const data = await res.json();
+        if(!res.ok){ return alert("Vote error: "+(data.error||"failed")); }
+        document.querySelectorAll(`[data-poll="${pollId}"]`).forEach(btn=>{ btn.disabled=true; btn.style.opacity=0.6; btn.style.cursor="not-allowed"; });
+      } catch(err){ console.error(err); alert("Vote failed"); }
+    }
+
+    socket.on("connect",()=>{ console.log("connected",socket.id); });
+    socket.on("voteUpdate",(payload)=>{ if(!payload||!payload.options) return; payload.options.forEach(o=>{ const elc=document.getElementById("count_"+o.id); if(elc) elc.innerText=`${o.votes} votes`; }); });
+
+    (async function init(){ updateAuthUI(); await loadUsers(); await loadPolls(); })();
+  </script>
+</body>
+</html>
